@@ -1,2 +1,3 @@
-# prometheus-notifier
-Timed PromQL result notifications
+# Prometheus notifier
+
+Timed PromQL result notifications.
