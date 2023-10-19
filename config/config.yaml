@@ -1,0 +1,11 @@
+instances:
+  - name: 玄武
+    prometheus_url: 'http://localhost:9090'
+    wecom_bot_key: *
+
+
+notifications:
+  - name: 节点状态
+    expr: up
+    crontab: "* * * * *"
+    message: Node {{ $labels.instance }} is {{ $value }}.
