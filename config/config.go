@@ -1,12 +1,19 @@
 package config
 
 import (
+	"github.com/morikuni/failure"
 	"github.com/rea1shane/gooooo/data"
 	"github.com/rea1shane/gooooo/os"
 )
 
 func Load(path string) (c Config, err error) {
-	err = os.Load(path, &c, data.YamlFormat)
+	err = failure.Wrap(
+		os.Load(path, &c, data.YamlFormat),
+		failure.Message("加载配置文件失败"),
+		failure.Context{
+			"Config path": path,
+		},
+	)
 	return
 }
 

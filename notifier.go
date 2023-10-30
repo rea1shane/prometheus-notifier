@@ -30,10 +30,12 @@ func main() {
 	logger.Info("开始运行")
 
 	// 配置文件
+	logger.Info("开始加载配置文件")
 	conf, err := config.Load(logPath)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatalf("加载配置文件失败\n%+v", err)
 	}
+	logger.Info("加载配置文件完毕")
 
 	// 初始化 cron
 	cronLogger := mycron.GenerateLogger(logger, []string{
