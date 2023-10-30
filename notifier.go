@@ -35,7 +35,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("加载配置文件失败\n%+v", err)
 	}
-	logger.Info("加载配置文件完毕")
+	logger.Info("加载配置文件成功")
 
 	// 初始化 cron
 	cronLogger := mycron.GenerateLogger(logger, []string{
@@ -64,37 +64,14 @@ type data struct {
 func schedule(c *cron.Cron, cronLogger *mycron.Logger, instances []config.Instance, notifications []config.Notification) error {
 	for _, instance := range instances {
 		// 初始化 API
-		a, err := prometheus.NewAPI(instance.PrometheusURL)
+		api, err := prometheus.NewAPI(instance.PrometheusURL)
 		if err != nil {
-			return failure.Wrap(
-				err,
-				failure.Message("初始化 API 失败"),
-				failure.Context{
-					"Prometheus URL": instance.PrometheusURL,
-				},
-			)
+			return err
 		}
+
 		// 调度
 		for _, notification := range notifications {
-			id, err := c.AddFunc(notification.Crontab, func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				msgs, warnings, err := query(ctx, a, notification)
-				if err != nil {
-					cronLogger.Error(err, "查询失败")
-					return
-				}
-				if warnings != nil {
-					for _, warning := range warnings {
-						cronLogger.Info(warning)
-					}
-				}
-				content := fmt.Sprintf("**%s**\n\n\n%s", notification.Name, strings.Join(msgs, "\n"))
-				err = wecom.SendBotMarkdownMsg(instance.WecomBotKey, content)
-				if err != nil {
-					cronLogger.Error(err, "发送机器人消息失败")
-				}
-			})
+			id, err := c.AddFunc(notification.Crontab, do(cronLogger, api, notification, instance.WecomBotKey))
 			if err != nil {
 				return failure.Wrap(
 					err,
@@ -111,29 +88,38 @@ func schedule(c *cron.Cron, cronLogger *mycron.Logger, instances []config.Instan
 	return nil
 }
 
+func do(logger cron.Logger, api v1.API, notification config.Notification, webhook string) func() {
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		msgs, warnings, err := query(ctx, api, notification)
+		if err != nil {
+			logger.Error(err, "")
+			return
+		}
+		if warnings != nil {
+			for _, warning := range warnings {
+				logger.Info(warning)
+			}
+		}
+		content := fmt.Sprintf("**%s**\n\n\n%s", notification.Name, strings.Join(msgs, "\n"))
+		err = wecom.SendBotMarkdownMsg(webhook, content)
+		if err != nil {
+			logger.Error(err, "发送机器人消息失败")
+		}
+	}
+}
+
 func query(ctx context.Context, api v1.API, notification config.Notification) (msgs []string, warnings v1.Warnings, err error) {
 	// 查询
 	samples, warnings, err := prometheus.Query(ctx, api, notification.Expr, time.Time{})
 	if err != nil {
-		return nil, nil, failure.Wrap(
-			err,
-			failure.Message("查询失败"),
-			failure.Context{
-				"PromQL": notification.Expr,
-			},
-		)
+		return nil, nil, err
 	}
 	for _, sample := range samples {
 		message, err := generateMessage(notification.Message, sample)
 		if err != nil {
-			return nil, warnings, failure.Wrap(
-				err,
-				failure.Message("生成消息失败"),
-				failure.Context{
-					"Message": notification.Message,
-					"Sample":  sample.String(),
-				},
-			)
+			return nil, warnings, err
 		}
 		msgs = append(msgs, message)
 	}
@@ -148,7 +134,14 @@ func generateMessage(msg string, sample *model.Sample) (string, error) {
 	}
 	parse, err := template.New("message").Parse(strings.Join(append(defs, msg), ""))
 	if err != nil {
-		return "", err
+		return "", failure.Wrap(
+			err,
+			failure.Message("创建消息模板失败"),
+			failure.Context{
+				"Message": msg,
+				"Sample":  sample.String(),
+			},
+		)
 	}
 
 	var buf strings.Builder
@@ -156,7 +149,14 @@ func generateMessage(msg string, sample *model.Sample) (string, error) {
 		Labels: convertToMap(sample.Metric),
 		Value:  float64(sample.Value),
 	}); err != nil {
-		return "", err
+		return "", failure.Wrap(
+			err,
+			failure.Message("生成消息失败"),
+			failure.Context{
+				"Message": msg,
+				"Sample":  sample.String(),
+			},
+		)
 	}
 	return buf.String(), nil
 }
