@@ -25,8 +25,8 @@ func SendBotMarkdownMsg(botKey, content string) error {
 	resp, err := http.Post(webhookUrl+botKey, "application/json", reqBodyBuffer)
 	if err != nil {
 		return failure.Wrap(err, failure.Context{
-			"botKey":  botKey,
-			"content": content,
+			"Bot key": botKey,
+			"Content": content,
 		})
 	}
 	defer resp.Body.Close()
@@ -38,7 +38,7 @@ func SendBotMarkdownMsg(botKey, content string) error {
 			failure.StringCode("请求企业微信失败"),
 			failure.Context{
 				"HTTP code": strconv.Itoa(resp.StatusCode),
-				"body":      string(respBody),
+				"Body":      string(respBody),
 			},
 		)
 	}

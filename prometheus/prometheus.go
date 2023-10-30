@@ -2,7 +2,7 @@ package prometheus
 
 import (
 	"context"
-	"fmt"
+	"github.com/morikuni/failure"
 	client "github.com/prometheus/client_golang/api"
 	api "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -14,27 +14,32 @@ func NewAPI(address string) (api.API, error) {
 		Address: address,
 	})
 	if err != nil {
-		return nil, err
+		return nil, failure.Wrap(err,
+			failure.Message("创建 API 失败"),
+			failure.Context{
+				"Address": address,
+			},
+		)
 	}
 	return api.NewAPI(c), nil
 }
 
-func Query(ctx context.Context, a api.API, promql string, t time.Time) ([]*model.Sample, error) {
+func Query(ctx context.Context, a api.API, promql string, t time.Time) ([]*model.Sample, api.Warnings, error) {
 	result, warnings, err := a.Query(ctx, promql, t)
 	if err != nil {
-		return nil, err
+		return nil, nil, failure.Wrap(err,
+			failure.Message("查询失败"),
+			failure.Context{
+				"PromQL": promql,
+			},
+		)
 	}
-	fmt.Println(warnings)
 
 	// 解析结果
 	switch i := result.(type) {
-	case nil:
-		fmt.Println("查询结果为空")
 	case model.Vector:
-		return i, err
-	default:
-		fmt.Println(i)
+		return i, warnings, err
 	}
 
-	return nil, nil
+	return nil, nil, failure.New(failure.StringCode("解析查询结果失败"))
 }
